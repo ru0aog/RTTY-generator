@@ -115,10 +115,12 @@ class RTTYSignal:
         self.mark_tone_duration = 0.1  # 100 мс (маркерный тон)
         self.end_pause_duration = 0.1  # 0.1 секунда паузы в конце
 
-    def _generate_tone(self, freq, duration):
+    def _generate_tone(self, freq, duration, start_phase):
         """Генерирует тон заданной частоты и длительности (на основе синуса)."""
         t = np.linspace(0, duration, int(self.sample_rate * duration), endpoint=False)
-        return self.amplitude * np.sin(2 * np.pi * freq * t)
+        # Учитываем начальную фазу
+        phase = 2 * np.pi * freq * t + start_phase
+        return self.amplitude * np.sin(phase)
 
     def _generate_silence(self, duration):
         """Генерирует тишину (нулевой сигнал) заданной длительности."""
@@ -128,10 +130,11 @@ class RTTYSignal:
     def modulate(self):
         """Генерирует FSK‑сигнал без пауз между битами, с 1‑сек паузой в конце."""
         bit_duration = 1.0 / self.baud  # длительность одного бита в секундах
+        total_phase = 0.0  # Текущая фаза сигнала
 
 
-        # 1. Маркерный тон ПЕРЕД передачей
-        pre_mark = self._generate_tone(self.mark_freq, self.mark_tone_duration)
+        # 1. Маркерный тон ПЕРЕД передачей (начинаем с фазы 0)
+        pre_mark = self._generate_tone(self.mark_freq, self.mark_tone_duration, 0.0)
 
         # 2. Сигнал данных (без пауз между битами)
         data_segments = []  # список сегментов (только биты)
@@ -149,16 +152,20 @@ class RTTYSignal:
                 bit_dur = bit_duration
             
             # Генерируем сигнал бита
-            bit_signal = self._generate_tone(freq, bit_dur)
+            bit_signal = self._generate_tone(freq, bit_dur, total_phase)
             data_segments.append(bit_signal)
-        
+            
+            # Обновляем общую фазу для следующего бита
+            cycles = freq * bit_dur  # Количество циклов за время бита
+            total_phase += 2 * np.pi * cycles
+            total_phase %= 2 * np.pi  # Нормализуем фазу [0, 2π)
         
         # Объединяем все сегменты данных
         data_signal = np.concatenate(data_segments)
 
 
         # 3. Маркерный тон ПОСЛЕ передачи
-        post_mark = self._generate_tone(self.mark_freq, self.mark_tone_duration)
+        post_mark = self._generate_tone(self.mark_freq, self.mark_tone_duration, total_phase)
 
         # 4. Пауза в конце (1 секунда тишины)
         end_pause = self._generate_silence(self.end_pause_duration)
