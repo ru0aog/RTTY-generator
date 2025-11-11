@@ -1,10 +1,13 @@
-import numpy as np
-import scipy.io.wavfile as wf
-import os
+
+# Импорт библиотек
+import numpy as np                   # работа с массивами и математическими операциями
+import scipy.io.wavfile as wf        # сохранение аудио в WAV‑файл
+import os                            # работа с файловой системой (создание директорий)
 
 
 class Payload:
-    """Преобразует текст в битовый массив (ITA2) с автоматическим переключением режимов."""
+    """Класс Payload
+    Преобразует текст в битовый массив (ITA2/МТК-2) с автоматическим переключением режимов"""
     ITA2 = {
         # латинские буквы в стандартном коде ITA2
         'A': [1, 1, 0, 0, 0], 'B': [1, 0, 0, 1, 1], 'C': [0, 1, 1, 1, 0],
@@ -16,7 +19,7 @@ class Payload:
         'S': [1, 0, 1, 0, 0], 'T': [0, 0, 0, 0, 1], 'U': [1, 1, 1, 0, 0],
         'V': [0, 1, 1, 1, 1], 'W': [1, 1, 0, 0, 1], 'X': [1, 0, 1, 1, 1],
         'Y': [1, 0, 1, 0, 1], 'Z': [1, 0, 0, 0, 1],
-        # цифры/знаки в стандартном коде ITA2
+        # цифры/знаки в стандартном коде МТК-2
         '0': [0, 1, 1, 0, 1], '1': [1, 1, 1, 0, 1], '2': [1, 1, 0, 0, 1],
         '3': [1, 0, 0, 0, 0], '4': [0, 1, 0, 1, 0], '5': [0, 0, 0, 0, 1],
         '6': [1, 0, 1, 0, 1], '7': [1, 1, 1, 0, 0], '8': [0, 1, 1, 0, 0],
@@ -26,7 +29,7 @@ class Payload:
         '/': [0, 1, 1, 1, 1], ' ': [0, 0, 1, 0, 0],
         'Ш': [0, 1, 0, 1, 1], 'Щ': [0, 0, 1, 0, 1], 'Э': [1, 0, 1, 1, 0],
         'Ю': [1, 1, 0, 1, 0], 'Ч': [0, 1, 0, 1, 0],
-        # Русские буквы (только в режиме RUS)
+        # Русские буквы в стандартном коде МТК-2
         'А': [1, 1, 0, 0, 0], 'Б': [1, 0, 0, 1, 1], 'В': [1, 1, 0, 0, 1],
         'Г': [0, 1, 0, 1, 1], 'Д': [1, 0, 0, 1, 0], 'Е': [1, 0, 0, 0, 0],
         'Ж': [0, 1, 1, 1, 1], 'З': [1, 0, 0, 0, 1], 'И': [0, 1, 1, 0, 0],
@@ -37,159 +40,202 @@ class Payload:
         'Х': [0, 0, 1, 0, 1], 'Ц': [0, 1, 1, 1, 0], 'Ъ': [1, 0, 1, 1, 1],
         'Ы': [1, 0, 1, 0, 1], 'Ь': [1, 0, 1, 1, 1], 
         'Я': [1, 1, 1, 0, 1], 'Ё': [1, 0, 0, 0, 0],
-        'RUS' : [0, 0, 0, 0, 0],  # ПЕРЕКЛЮЧЕНИЕ НА РУССКИЙ РЕЖИМ
+        'RUS' : [0, 0, 0, 0, 0],  # переключение на русские буквы
         'FIGS': [1, 1, 0, 1, 1],  # переключение на цифры/спецсимволы
-        'LAT': [1, 1, 1, 1, 1],   # переключение на латинские буквы
-        '\r': [0, 0, 0, 1, 0],    # CR (возврат каретки)
-        '\n': [0, 1, 0, 0, 0]     # LF (перевод строки)
+        'LAT':  [1, 1, 1, 1, 1],  # переключение на латинские буквы
+        '\r':   [0, 0, 0, 1, 0],  # CR (возврат каретки)
+        '\n':   [0, 1, 0, 0, 0]   # LF (перевод строки)
     }
-
-
-    def __init__(self, text):
-        self.rawData = str(text).upper()
-        self.bitArray = []
-        self.bits_length = 0
-        self.current_mode = 'LAT'  # начальный режим — буквы
-        self._encode_to_ita2()
-
     
-    def _encode_to_ita2(self):
-	    """Кодирует текст в биты по ITA2 с автоматическим переключением режимов."""
-	    # 1. Добавляем CR + LF в начало
-	    self._add_char_to_bitarray('LAT')
-	    self._add_char_to_bitarray('\r')
-	    self._add_char_to_bitarray('\n')
-	
-	    # 2. Начальное переключение на LTRS (если ещё не в этом режиме)
-	    if self.current_mode != 'LAT':
-	        self._add_char_to_bitarray('LAT')
-	        self.current_mode = 'LAT'
-	
-	    # 3. Кодируем основной текст
-	    for char in self.rawData:
-	        if char not in self.ITA2:
-	            continue  # пропускаем неподдерживаемые символы
-	
-	        target_mode = self._get_char_mode(char)
-	        if target_mode != self.current_mode:
-	            self._add_char_to_bitarray(target_mode)
-	            self.current_mode = target_mode
-	        self._add_char_to_bitarray(char)
-	
-	    # 4. Добавляем CR + LF в конец
-	    self._add_char_to_bitarray('\r')
-	    self._add_char_to_bitarray('\n')
-	    self.bits_length = len(self.bitArray)
+    # инициализация
+    def __init__(self, text):
+        """Метод __init__ класса Payload
+		Конструктор класса, который:
+		- Принимает входной текст,
+		- Подготавливает внутренние атрибуты объекта,
+		- Запускает процесс кодирования текста в битовый массив по стандарту ITA2.
+		self — ссылка на создаваемый экземпляр класса,
+		text — входной текст (строка), который нужно закодировать.
+		"""
+        self.rawData = str(text).upper()
+                                   # Преобразует входной параметр text в строку (если он ещё не строка).
+                                   # Приводит все символы к верхнему регистру с помощью .upper() (ITA2 работает только с заглавными буквами).
+                                   # Сохраняет результат в атрибут rawData.
+        self.bitArray = []         # Создаёт пустой список для хранения итогового битового представления сообщения.
+                                   # В дальнейшем сюда будут добавляться биты (0, 1 и 0.5) по правилам ITA2.
+        self.bits_length = 0       # Инициализирует счётчик длины битового массива.
+                                   # После кодирования будет обновлён до реальной длины bitArray.
+        self.current_mode = 'LAT'  # Устанавливает начальный режим кодирования: 'LAT' (латинские буквы).
+        self._encode_to_ita2()     # Вызывает приватный метод _encode_to_ita2(), который:
+                                   # - Добавляет служебные символы (CR+LF) в начало и конец.
+                                   # - Анализирует каждый символ текста.
+                                   # - При необходимости переключает режим (например, с 'LAT' на 'RUS').
+                                   # - Кодирует символы в биты по таблице ITA2.
+                                   # - Формирует итоговый bitArray с старт‑, стоп‑ и полустоп‑битами.
 
+    def _encode_to_ita2(self):
+	    """Метод _encode_to_ita2 класса Payload
+	    преобразует исходный текст self.rawData в последовательность битов self.bitArray с учётом:
+	    - служебных символов (CR/LF);
+	    - переключения между режимами (LAT/RUS/FIGS);
+	    - правил ITA2 (старт‑, стоп‑ и полустоп‑биты)."""
+	    # 1. Добавление служебных символов CR + LF в начало
+	    self._add_char_to_bitarray('LAT')               # добавляем в битовый массив (bitArray) код режима LAT
+	    self.current_mode = 'LAT'                       # устанавливаем текущий режим LAT
+	    self._add_char_to_bitarray('\r')                # добавляем в битовый массив (bitArray) код символа CR
+	    self._add_char_to_bitarray('\n')                # добавляем в битовый массив (bitArray) код символа LF
+	
+	    # 2. Кодируем основной текст
+	    for char in self.rawData:       # Цикл по символам текста: для каждого символа
+	        if char not in self.ITA2:   #   Проверка поддержки: если символ отсутствует в таблице ITA2,
+	            continue                #                       пропускаем неподдерживаемые символы
+	
+	        target_mode = self._get_char_mode(char)     # Вызываем метод _get_char_mode(char), который по символу char определяет, в каком режиме он должен кодироваться
+	                                                    # Например, если символ в маасиве 'ABC...XYZ' → возвращает 'LAT'.
+	        if target_mode != self.current_mode:        # Проверяет, совпадает ли требуемый режим (target_mode) с текущим режимом объекта (self.current_mode).
+	                                                    # Если режимы различаются, то
+	            self._add_char_to_bitarray(target_mode) # Вызываем метод _add_char_to_bitarray с аргументом target_mode, который
+	                                                    # добавляет в битовый массив (bitArray) код переключения режима
+	                                                    # Например, при переключении на 'RUS' в bitArray добавится:
+	                                                    # [0, 0, 0, 0, 0, 0, 1, 0.5] (старт + код RUS + стоп + полустоп).
+	            self.current_mode = target_mode         # Обновляем текущий режим объекта на новый (target_mode)
+	                                                    # чтобы не отправлять коды режима до следующего переключения.
+	        self._add_char_to_bitarray(char)            # Вызываем метод _add_char_to_bitarray с аргументом char, который
+	                                                    # добавляет в битовый массив (bitArray) код символа
+	                                                    # Например, для символа 'А' в режиме 'RUS' добавится:
+	                                                    # [0, 1, 1, 0, 0, 0, 1, 0.5] (старт + код RUS + стоп + полустоп).
+	    # 3. Добавление служебных символов CR + LF в конец
+	    self._add_char_to_bitarray('\r')                # добавляем в битовый массив (bitArray) код символа CR
+	    self._add_char_to_bitarray('\n')                # добавляем в битовый массив (bitArray) код символа LF
+	    self.bits_length = len(self.bitArray)           # Обновляем атрибут bits_length — длину битового массива после завершения кодирования.
 
 
     def _get_char_mode(self, char):
-        """Определяет, в каком режиме должен быть символ (LTRS, FIGS или RUS)."""
-        if char in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ':
-            return 'LAT'
-        elif char in 'АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЪЫЬЯ':
-            return 'RUS'
-        else:
-            return 'FIGS'  # цифры, знаки препинания, пробел и др.
+        """Метод _get_char_mode класса Payload
+	    Определяет режим, к которому относится символ (LAT, FIGS или RUS).
+	    self — ссылка на создаваемый экземпляр класса,
+	    char - символ, по которому будет определён режим.
+	    Метод ожидает заглавные буквы.
+	    """
+        if char in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ':        # если символ относится к латинским буквам
+            return 'LAT'                                # вернуть значение 'LAT'
+        elif char in 'АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЪЫЬЯ':    # если символ относится к русским буквам (за исключением Ч,Ш,Щ,Э,Ю)
+            return 'RUS'                                # вернуть значение 'RUS'
+        else:                                           # во всех остальных случаях (цифры, знаки препинания, пробел, буквы Ч,Ш,Щ,Э,Ю и др.)
+            return 'FIGS'                               # вернуть значение 'FIGS'
 
 
     def _add_char_to_bitarray(self, char):
-        """Добавляет символ в bitArray с старт/стоп‑битами."""
-        code = self.ITA2[char]
-        self.bitArray.extend([0] + code + [1, 0.5])  # старт, код, стоп, полустоп
-
+        """метод _add_char_to_bitarray класса Payload
+        Добавляет код символа в bitArray с старт/стоп‑битами"""
+        code = self.ITA2[char]                          # Получает 5‑битный код символа из словаря ITA2.
+                                                        # Если символ отсутствует в ITA2, возникнет исключение KeyError
+                                                        # поэтому предварительно в _encode_to_ita2 выполняется проверка
+        self.bitArray.extend([0] + code + [1, 0.5])     # Формирует полную последовательность: старт, код, стоп, полустоп
+                                                        # и добавляет сформированные элементы поодиночке в конец bitArray
 
 
 class RTTYSignal:
-    """Генерирует RTTY‑сигнал (FSK) из текстового сообщения."""
+    """Класс RTTYSignal
+    осуществляет генерацию звукового FSK‑сигнала (Frequency Shift Keying) по закодированным данным из объекта Payload,
+    т.е. преобразует битовый поток (payload.bitArray) в аудиосигнал"""
 
-    def __init__(self, payload, baud=45.45, mark_freq=1170, space_freq=1000, amplitude=10000):
-        self.payload = payload
-        self.baud = baud
-        self.mark_freq = mark_freq
-        self.space_freq = space_freq
-        self.amplitude = amplitude
-        self.signal = np.array([])
-        self.isModulated = False
-        self.sample_rate = 44100  # Гц
-        self.mark_tone_duration = 0.1  # 100 мс (маркерный тон)
-        self.end_pause_duration = 0.1  # 0.1 секунда паузы в конце
+    def __init__(self, payload, baud, mark_freq, space_freq, amplitude, sample_rate):
+        self.payload = payload                          # объект Payload с закодированными битами
+        self.baud = baud                                # скорость передачи (по умолчанию 45.45 бод).
+        self.mark_freq = mark_freq                      # частота марк  (обычно выше, чем спейс)
+        self.space_freq = space_freq                    # частота спейс (обычно ниже, чем марк)
+        self.amplitude = amplitude                      # амплитуда сигнала (по умолчанию 10 000)
+        self.signal = np.array([])                      # итоговый аудиосигнал (пустой до вызова modulate)
+        self.isModulated = False                        # флаг: сигнал сгенерирован (True) или нет.
+        self.sample_rate = sample_rate                  # частота дискретизации (44 100 Гц).
+        self.mark_tone_duration = 0.1                   # 100 мс (длительность маркерного тона в начале и конце передачи)
+        self.end_pause_duration = 0.1                   # 100 мс (длительность паузы в конце передачи)
 
     def _generate_tone(self, freq, duration, start_phase):
         """Генерирует тон заданной частоты и длительности (на основе синуса)."""
-        t = np.linspace(0, duration, int(self.sample_rate * duration), endpoint=False)
+        t = np.linspace(0, duration, int(self.sample_rate * duration), endpoint=False) # t - массив временных отсчётов (через np.linspace)
         # Учитываем начальную фазу
-        phase = 2 * np.pi * freq * t + start_phase
-        return self.amplitude * np.sin(phase)
+        phase = 2 * np.pi * freq * t + start_phase      # phase — фазовая функция: 2π*freq*t+start_phase
+        return self.amplitude * np.sin(phase)           # Возвращает: amplitude*sin(phase)
 
     def _generate_silence(self, duration):
         """Генерирует тишину (нулевой сигнал) заданной длительности."""
-        n_samples = int(self.sample_rate * duration)
-        return np.zeros(n_samples)
+        n_samples = int(self.sample_rate * duration)    # Вычисляет число отсчётов: int(sample_rate * duration)
+        return np.zeros(n_samples)                      # Возвращает np.zeros(n_samples)
 
     def modulate(self):
         """Генерирует FSK‑сигнал без пауз между битами, с 1‑сек паузой в конце."""
-        bit_duration = 1.0 / self.baud  # длительность одного бита в секундах
-        total_phase = 0.0  # Текущая фаза сигнала
+        bit_duration = 1.0 / self.baud                  # длительность одного бита в секундах
+        total_phase = 0.0                               # Текущая фаза сигнала
 
 
         # 1. Маркерный тон ПЕРЕД передачей (начинаем с фазы 0)
         pre_mark = self._generate_tone(self.mark_freq, self.mark_tone_duration, 0.0)
 
         # 2. Сигнал данных (без пауз между битами)
-        data_segments = []  # список сегментов (только биты)
-        for bit in self.payload.bitArray:
+        data_segments = []                              # список сегментов (только биты)
+        for bit in self.payload.bitArray:               # цикл по битам из payload.bitArray
             # Определяем частоту для бита
-            if bit == 1 or bit == 0.5:  # mark (включая полустоп)
-                freq = self.mark_freq
-            else:  # space (0)
-                freq = self.space_freq
-            
-            # Длительность бита (учитываем полустоп 0.5)
-            if bit == 0.5:
-                bit_dur = 0.5 * bit_duration
-            else:
-                bit_dur = bit_duration
-            
-            # Генерируем сигнал бита
-            bit_signal = self._generate_tone(freq, bit_dur, total_phase)
-            data_segments.append(bit_signal)
+            if bit == 1 or bit == 0.5:                  # если mark (включая полустоп 1 или 0.5)
+                freq = self.mark_freq                   # частота freq = марк
+            else:                                       # иначе - space (0)
+                freq = self.space_freq                  # частота freq = спейс
+
+            # Определяем длительность бита (учитываем полустоп 0.5)
+            if bit == 0.5:                              # если полустоп (0.5)
+                bit_dur = 0.5 * bit_duration            # длительность bit_dur = 0.5*bit_duration
+            else:                                       # иначе (0 или 1)
+                bit_dur = bit_duration                  # длительность bit_dur = bit_duration
+
+            # Генерируем сигнал бита в сегмент
+            bit_signal = self._generate_tone(freq, bit_dur, total_phase)  # генерируем сигнал с частотой freq, длительностью bit_dur, фазой total_phase
+            data_segments.append(bit_signal)                              # Добавляет сгенерированный звуковой фрагмент (из одного бита/полубита) в список сегментов сигнала
             
             # Обновляем общую фазу для следующего бита
-            cycles = freq * bit_dur  # Количество циклов за время бита
-            total_phase += 2 * np.pi * cycles
-            total_phase %= 2 * np.pi  # Нормализуем фазу [0, 2π)
+            cycles = freq * bit_dur                     # Количество циклов колебаний за время звучания бита/полубита
+            total_phase += 2 * np.pi * cycles           # Переводим количество циклов в фазовый угол (в радианах) 
+                                                        # и добавляем этот прирост к текущей фазе total_phase
+                                                        # чтобы следующий бит начался с той фазы, на которой закончился предыдущий (плавный переход)
+            total_phase %= 2 * np.pi                    # Нормализуем фазу [0, 2π)
+                                                        # Операция %= (остаток от деления) «обрубает» лишние полные обороты, оставляя только дробную часть.
         
         # Объединяем все сегменты данных
         data_signal = np.concatenate(data_segments)
 
-
         # 3. Маркерный тон ПОСЛЕ передачи
         post_mark = self._generate_tone(self.mark_freq, self.mark_tone_duration, total_phase)
 
-        # 4. Пауза в конце (1 секунда тишины)
+        # 4. Пауза в конце
         end_pause = self._generate_silence(self.end_pause_duration)
 
         # 5. Итоговый сигнал: pre_mark + data_signal + post_mark + end_pause
         self.signal = np.concatenate([pre_mark, data_signal, post_mark, end_pause])
-        self.isModulated = True
+        self.isModulated = True                         # Устанавливает флаг, что сигнал успешно сгенерирован.
 
 
     def play(self):
         """Воспроизводит сигнал через звуковую карту."""
-        if not self.isModulated:
+        if not self.isModulated:                        # Если сигнал не сгенерирован (isModulated == False), выводится ошибка и метод завершается
             print("Ошибка: сигнал не сгенерирован.")
             return
-
-        try:
-            import sounddevice as sd
-
+        try:                                                              # Попытка воспроизведения
+            import sounddevice as sd                                      # Подключаем библиотеку для работы со звуковой картой
             # Нормализуем сигнал до диапазона [-1, 1] для безопасного воспроизведения
-            signal_normalized = self.signal / np.max(np.abs(self.signal))
-
+            signal_normalized = self.signal / np.max(np.abs(self.signal)) # Делим массив отсчётов на максимальное абсолютное значение в сигнале
+                                                                          # что приводит сигнал к диапазону [-1, 1], т.е. предотвращает клиппинг
+            print("Система генерации RTTY-сигнала (радиотелетайп)")
+            print(" ")
+            print("Параметры сигнала ", self.sample_rate, "Гц 16 бит")
+            print("Скорость передачи ", self.baud, "бод")
+            print("Частота МАРК      ", self.mark_freq, " Гц")
+            print("Частота СПЕЙС     ", self.space_freq, " Гц")
+            print(" ")
             print("Воспроизведение запущено...")
-            sd.play(signal_normalized, samplerate=self.sample_rate)
-            sd.wait()  # Ждём окончания воспроизведения
+            
+            sd.play(signal_normalized, samplerate=self.sample_rate)       # Отправляем нормализованный сигнал на звуковую карту с частотой дискретизации self.sample_rate
+            sd.wait()                                                     # Ждём окончания воспроизведения
+                                                                          # код не продолжит выполнение, пока не закончится звук.
             print("Воспроизведение завершено.")
         except ModuleNotFoundError:
             print("Ошибка: библиотека sounddevice не установлена. Выполните: pip install sounddevice")
@@ -198,28 +244,31 @@ class RTTYSignal:
 
     def save_wav(self, filename=None):
         """Сохраняет сигнал в WAV‑файл."""
-        if not self.isModulated:
+        if not self.isModulated:                        # Если сигнал не сгенерирован (isModulated == False), выводится ошибка и метод завершается
             print("Ошибка: сигнал не сгенерирован.")
             return
-        if filename is None:
-            filename = self.payload.rawData[:20]
-        os.makedirs("./audio", exist_ok=True)
-        filepath = f"./audio/{filename}.wav"
+        if filename is None:                            # Если имя файла не передано, 
+            filename = self.payload.rawData[:20]        # берётся первые 20 символов исходного текста сообщения
+        os.makedirs("./audio", exist_ok=True)           # Создаёт директорию ./audio/, если её нет (exist_ok=True подавляет ошибку при существовании папки)
+        filepath = f"./audio/{filename}.wav"            # Полный путь к файлу (например, ./audio/HELLO.wav)
         try:
             # Нормализация сигнала до диапазона int16
-            signal_normalized = self.signal / np.max(np.abs(self.signal))
-            signal_int16 = np.int16(signal_normalized * 32767)
-            wf.write(filepath, self.sample_rate, signal_int16)
+            signal_normalized = self.signal / np.max(np.abs(self.signal))   # Нормализация сигнала к диапазону [-1, 1]
+            signal_int16 = np.int16(signal_normalized * 32767)              # Умножение на 32767 масштабирует сигнал до максимального значения int16
+            wf.write(filepath, self.sample_rate, signal_int16)              # Функция из модуля scipy.io.wavfile для записи в WAV-файл
             print(f"Файл сохранён: {filepath} (частота дискретизации: {self.sample_rate} Гц)")
         except Exception as e:
             print(f"Ошибка при сохранении: {e}")
-            
+                                                                            # WAV сохраняется в несжатом PCM‑формате (16 бит, моно).
 if __name__ == "__main__":
     lines = [
-        "-------",
+        "BGN-BGN-BGN",
+        "----",
         "Съешь ещё этих мягких французских булок, да выпей же чаю» (русский),",
-        "The quick brown fox jumps over the lazy dog(english). 1234567890",
-        "-------"
+        "The quick brown fox jumps over the lazy dog(english)."
+        "0123456789 +/- (:?)",
+        "----",
+        "END-END-END"
     ]
 
     # Объединяем в одно сообщение через перевод строки (без дополнительных пауз)
@@ -229,12 +278,13 @@ if __name__ == "__main__":
     payload = Payload(text)
     rtty = RTTYSignal(
         payload,
-        baud=45.45,
-        mark_freq=1170,
-        space_freq=1000,
-        amplitude=10000
+        baud        = 45.45,
+        mark_freq   = 1170,
+        space_freq  = 1000,
+        amplitude   = 10000,
+        sample_rate = 44100
     )
 
     rtty.modulate()
-    rtty.play()  # воспроизводим единым потоком (без пауз между строками)
+    rtty.play()                   # воспроизводим
     rtty.save_wav("rtty_message") # Сохраняем в WAV‑файл
